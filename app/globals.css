@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --background: #05070d;
+  --foreground: #e8edf6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow: hidden;
+}
+
+body {
+  min-height: 100vh;
+  overflow: hidden;
+  margin: 0;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(71, 85, 105, 0.2), transparent 34rem),
+    radial-gradient(circle at 80% 0%, rgba(30, 41, 59, 0.25), transparent 30rem),
+    linear-gradient(140deg, #03050a 0%, #070b13 45%, #0b111b 100%);
+  color: var(--foreground);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(71, 85, 105, 0.45);
+}
+
+.offer-track {
+  animation: offer-scroll 26s linear infinite;
+}
+
+.agent-stream {
+  animation: agent-stream 13s linear infinite;
+}
+
+.typing-caret {
+  animation: caret-blink 0.8s steps(1) infinite;
+}
+
+@keyframes offer-scroll {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes agent-stream {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
