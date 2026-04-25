@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { BitcoinProvider } from "@/components/bitcoin-provider";
+import { SiteTopBar } from "@/components/site-top-bar";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,7 +16,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <BitcoinProvider>{children}</BitcoinProvider>
+        <BitcoinProvider>
+          <SiteTopBar />
+          {children}
+        </BitcoinProvider>
       </body>
     </html>
   );
