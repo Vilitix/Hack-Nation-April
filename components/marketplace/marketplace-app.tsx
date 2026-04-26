@@ -1,12 +1,11 @@
 "use client";
 
-import { Search, Star } from "lucide-react";
-import Link from "next/link";
+import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { AgentDetailModal } from "@/components/marketplace/agent-detail-modal";
 import { agents as seededAgents } from "@/lib/agents";
 import { matchAgents } from "@/lib/matcher";
 import { formatSats } from "@/lib/payments";
-import { publisherToSlug } from "@/lib/publishers";
 import { Agent } from "@/lib/types";
 
 const typingExamples = [
@@ -18,7 +17,7 @@ const typingExamples = [
 export function MarketplaceApp() {
   const [query, setQuery] = useState("");
   const [typedExample, setTypedExample] = useState("");
-  const [selectedAgent, setSelectedAgent] = useState<Agent>(seededAgents[0]);
+  const [modalAgent, setModalAgent] = useState<Agent | null>(null);
 
   const matches = useMemo(() => matchAgents(seededAgents, query || typingExamples[0], "All"), [query]);
   const agentsOfTheDay = useMemo(() => {
@@ -98,7 +97,7 @@ export function MarketplaceApp() {
                   type="button"
                   onClick={() => {
                     setQuery(agent.name);
-                    setSelectedAgent(agent);
+                    setModalAgent(agent);
                   }}
                   className="group flex flex-col items-start justify-between rounded-lg border border-zinc-900 bg-zinc-950/50 p-3 transition-all hover:border-zinc-700 hover:bg-zinc-900/50"
                 >
@@ -128,7 +127,7 @@ export function MarketplaceApp() {
                     type="button"
                     onClick={() => {
                       setQuery(agent.name);
-                      setSelectedAgent(agent);
+                      setModalAgent(agent);
                     }}
                     className="w-64 shrink-0 rounded-lg border border-zinc-900 bg-black p-4 text-left transition-colors hover:border-zinc-700"
                   >
@@ -143,64 +142,13 @@ export function MarketplaceApp() {
             </div>
           </div>
 
-          <div className="mt-6 w-full max-w-3xl rounded-lg border border-zinc-900 bg-zinc-950/30 p-6 text-left sm:p-8 backdrop-blur-sm">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="max-w-md">
-                <h3 className="text-2xl font-light tracking-tight text-white">{selectedAgent.name}</h3>
-                <p className="mt-3 text-sm font-light leading-relaxed text-zinc-400">{selectedAgent.tagline}</p>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-600">Publisher</span>
-                <Link
-                  href={`/publishers/${publisherToSlug(selectedAgent.publisher)}`}
-                  className="text-sm font-medium text-zinc-300 transition-colors hover:text-white hover:underline underline-offset-4"
-                >
-                  {selectedAgent.publisher}
-                </Link>
-              </div>
-            </div>
-
-            <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-zinc-900 pt-6">
-              <div className="flex items-center gap-2">
-                <StarRating rating={selectedAgent.rating} />
-                <span className="text-sm font-medium text-zinc-300">{selectedAgent.rating.toFixed(1)}</span>
-              </div>
-              <span className="text-zinc-700">•</span>
-              <span className="text-xs text-zinc-500">{selectedAgent.reviewCount} verified reviews</span>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {selectedAgent.reviews.slice(0, 2).map((review, index) => (
-                <article key={`${review.author}-${index}`} className="flex flex-col justify-between rounded-lg bg-zinc-900/20 p-4 border border-zinc-900/50">
-                  <p className="text-xs font-light leading-relaxed text-zinc-400 italic">"{review.comment}"</p>
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-zinc-300">{review.author}</span>
-                    <span className="text-[10px] text-zinc-500">{review.rating.toFixed(1)} / 5</span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
+          <p className="mt-6 w-full max-w-3xl text-center text-xs text-zinc-600">
+            Open any card to see full details, reviews, and use the agent.
+          </p>
         </div>
 
+        <AgentDetailModal agent={modalAgent} onClose={() => setModalAgent(null)} />
       </section>
     </main>
-  );
-}
-
-function StarRating({ rating }: { rating: number }) {
-  const roundedRating = Math.round(rating);
-
-  return (
-    <span className="flex items-center gap-1" aria-label={`${rating.toFixed(1)} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((value) => (
-        <Star
-          key={value}
-          size={12}
-          strokeWidth={value <= roundedRating ? 0 : 1.5}
-          className={value <= roundedRating ? "fill-zinc-300 text-zinc-300" : "text-zinc-700"}
-        />
-      ))}
-    </span>
   );
 }
