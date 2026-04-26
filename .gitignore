@@ -219,6 +219,9 @@ __marimo__/
 prisma/dev.db
 prisma/dev.db-journal
 
+# Chroma local volume (see README)
+chroma-data/
+
 # Node / Next.js
 node_modules/
 .next/
