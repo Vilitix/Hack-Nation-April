@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  agents       PublishedAgent[]
+
+  @@map("users")
+}
+
+model PublishedAgent {
+  id              String      @id @default(cuid())
+  ownerId         String      @map("owner_id")
+  name            String
+  description     String
+  priceSats       Int         @map("price_sats")
+  hostingMode     HostingMode @map("hosting_mode")
+  hostingPlan     HostingPlan? @map("hosting_plan")
+  status          AgentStatus @default(DRAFT)
+  apiPath         String?     @unique @map("api_path")
+  tokenHash       String?     @map("token_hash")
+  endpointUrl     String?     @map("endpoint_url")
+  port            Int?
+  revenueSats     Int         @default(0) @map("revenue_sats")
+  runCount        Int         @default(0) @map("run_count")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  owner           User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@map("published_agents")
+}
+
+enum HostingMode {
+  SELF_HOSTED
+  MARKET_HOSTED
+}
+
+enum HostingPlan {
+  VRAM_16
+  VRAM_32
+  VRAM_80
+  VRAM_200
+}
+
+enum AgentStatus {
+  DRAFT
+  WAITING_PAYMENT
+  ACTIVE
+}

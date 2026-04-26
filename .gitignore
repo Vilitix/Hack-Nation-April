@@ -214,6 +214,10 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Prisma (local SQLite; keep migrations/)
+prisma/dev.db
+prisma/dev.db-journal
+
 # Node / Next.js
 node_modules/
 .next/
