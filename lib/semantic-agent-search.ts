@@ -1,5 +1,6 @@
 import { ChromaClient } from "chromadb";
 import { agents as seededAgents } from "@/lib/agents";
+import { debugError, debugLog, debugTimed } from "@/lib/debug";
 import { prisma } from "@/lib/db";
 import { embedText, rankAgentAnnouncements } from "@/lib/nvidia";
 import { Agent, AgentCategory, AgentMatch } from "@/lib/types";
@@ -13,6 +14,9 @@ type PublishedAgentForSearch = {
   hostingPlan: string | null;
   status: string;
   apiPath: string | null;
+  apiParameterKey?: string;
+  apiParameterLabel?: string;
+  apiParameterPlaceholder?: string | null;
   owner?: {
     name: string | null;
     email: string;
@@ -23,30 +27,59 @@ type ChromaAgentMetadata = {
   name?: string;
   priceSats?: number;
   status?: string;
+  hostingMode?: string;
 };
 
 const COLLECTION_NAME = process.env.CHROMA_COLLECTION ?? "published_agents";
 const DEFAULT_CHROMA_URL = "http://localhost:8000";
+let loggedRuntimeConfig = false;
 
-function chromaClient() {
+function chromaConfig() {
   const url = new URL(process.env.CHROMA_URL ?? DEFAULT_CHROMA_URL);
-  const headers = process.env.CHROMA_API_KEY
-    ? { Authorization: `Bearer ${process.env.CHROMA_API_KEY}` }
-    : undefined;
-
-  return new ChromaClient({
+  return {
     host: url.hostname,
     port: Number(url.port || (url.protocol === "https:" ? 443 : 8000)),
     ssl: url.protocol === "https:",
-    headers,
-  });
+    headers: process.env.CHROMA_API_KEY ? { Authorization: `Bearer ${process.env.CHROMA_API_KEY}` } : undefined,
+  };
+}
+
+function chromaClient() {
+  const config = chromaConfig();
+  if (!loggedRuntimeConfig) {
+    loggedRuntimeConfig = true;
+    debugLog("config", "runtime", {
+      chromaHost: config.host,
+      chromaPort: config.port,
+      chromaSsl: config.ssl,
+      collection: COLLECTION_NAME,
+      hasNvidiaKey: Boolean(process.env.NVIDIA_API_KEY),
+      nvidiaEmbeddingModel: process.env.NVIDIA_EMBEDDING_MODEL ?? "nvidia/nv-embedqa-e5-v5",
+      nvidiaSearchModel: process.env.NVIDIA_SEARCH_MODEL ?? "meta/llama-3.1-70b-instruct",
+    });
+  }
+  return new ChromaClient(config);
 }
 
 async function agentCollection() {
-  return chromaClient().getOrCreateCollection({
-    name: COLLECTION_NAME,
-    embeddingFunction: null,
-  });
+  const config = chromaConfig();
+  const client = chromaClient();
+
+  return debugTimed(
+    "chroma",
+    "handshake",
+    { collection: COLLECTION_NAME, host: config.host, port: config.port, ssl: config.ssl },
+    async () => {
+      await client.heartbeat();
+      const collection = await client.getOrCreateCollection({
+        name: COLLECTION_NAME,
+        embeddingFunction: null,
+      });
+      const count = await collection.count().catch(() => null);
+      debugLog("chroma", "collection:ready", { collection: COLLECTION_NAME, count });
+      return collection;
+    },
+  );
 }
 
 function taglineFromDescription(description: string) {
@@ -75,6 +108,36 @@ function categoryFromText(text: string): AgentCategory {
   return "Research";
 }
 
+function announcementField(document: string, field: string) {
+  const line = document.split("\n").find((item) => item.toLowerCase().startsWith(`${field.toLowerCase()}:`));
+  return line?.slice(field.length + 1).trim() ?? "";
+}
+
+function chromaRecordToMarketplaceAgent(id: string, metadata: ChromaAgentMetadata | null | undefined, document: string | null | undefined): Agent {
+  const text = document ?? "";
+  const name = metadata?.name ?? announcementField(text, "Name") ?? "Dummy Chroma Agent";
+  const description = announcementField(text, "Description") || text || "Dummy Chroma agent seeded for semantic search testing.";
+  const hostingMode = metadata?.hostingMode === "SELF_HOSTED" ? "SELF_HOSTED" : "MARKET_HOSTED";
+
+  return publishedAgentToMarketplaceAgent({
+    id,
+    name,
+    description,
+    priceSats: typeof metadata?.priceSats === "number" ? metadata.priceSats : 1000,
+    hostingMode,
+    hostingPlan: null,
+    status: metadata?.status ?? "ACTIVE",
+    apiPath: id,
+    apiParameterKey: "request",
+    apiParameterLabel: "Request",
+    apiParameterPlaceholder: "Describe what you want this agent to do",
+    owner: {
+      name: "Chroma seed",
+      email: "seed@example.com",
+    },
+  });
+}
+
 export function publishedAgentToMarketplaceAgent(agent: PublishedAgentForSearch): Agent {
   const text = `${agent.name} ${agent.description}`;
   const publisher = agent.owner?.name || agent.owner?.email.split("@")[0] || "Marketplace publisher";
@@ -96,10 +159,10 @@ export function publishedAgentToMarketplaceAgent(agent: PublishedAgentForSearch)
     refundable: true,
     parameters: [
       {
-        id: "request",
-        label: "Request",
+        id: agent.apiParameterKey ?? "request",
+        label: agent.apiParameterLabel ?? "Request",
         type: "textarea",
-        placeholder: "Describe what you want this agent to do",
+        placeholder: agent.apiParameterPlaceholder ?? "Describe what you want this agent to do",
         required: true,
       },
     ],
@@ -109,10 +172,16 @@ export function publishedAgentToMarketplaceAgent(agent: PublishedAgentForSearch)
 }
 
 export async function getMarketplaceAgents() {
+  debugLog("marketplace", "agents:load:start");
   const publishedAgents = await prisma.publishedAgent.findMany({
     where: { status: "ACTIVE" },
     include: { owner: { select: { name: true, email: true } } },
     orderBy: { createdAt: "desc" },
+  });
+
+  debugLog("marketplace", "agents:load:ok", {
+    prismaActiveAgents: publishedAgents.length,
+    staticAgents: seededAgents.length,
   });
 
   return [...publishedAgents.map(publishedAgentToMarketplaceAgent), ...seededAgents];
@@ -122,6 +191,7 @@ export function buildAgentAnnouncement(agent: PublishedAgentForSearch) {
   return [
     `Name: ${agent.name}`,
     `Description: ${agent.description}`,
+    `Runtime parameter: ${agent.apiParameterLabel ?? "Request"} (${agent.apiParameterKey ?? "request"})`,
     `Price: ${agent.priceSats} sats per run`,
     `Hosting: ${agent.hostingMode === "MARKET_HOSTED" ? "marketplace hosted" : "publisher hosted"}`,
   ].join("\n");
@@ -129,6 +199,12 @@ export function buildAgentAnnouncement(agent: PublishedAgentForSearch) {
 
 export async function indexPublishedAgent(agent: PublishedAgentForSearch) {
   const document = buildAgentAnnouncement(agent);
+  debugLog("chroma", "index:start", {
+    agentId: agent.id,
+    name: agent.name,
+    status: agent.status,
+    documentLength: document.length,
+  });
   const embedding = await embedText(document, "passage");
   const collection = await agentCollection();
 
@@ -141,9 +217,15 @@ export async function indexPublishedAgent(agent: PublishedAgentForSearch) {
         name: agent.name,
         priceSats: agent.priceSats,
         status: agent.status,
+        hostingMode: agent.hostingMode,
         apiPath: agent.apiPath ?? "",
       },
     ],
+  });
+  debugLog("chroma", "index:upserted", {
+    agentId: agent.id,
+    collection: COLLECTION_NAME,
+    embeddingDimensions: embedding.length,
   });
 }
 
@@ -169,28 +251,47 @@ function lexicalFallbackMatches(agents: Agent[], query: string): AgentMatch[] {
 }
 
 export async function semanticSearchAgents(query: string): Promise<AgentMatch[]> {
+  const searchStartedAt = Date.now();
+  debugLog("search", "request:start", { query, queryLength: query.length });
   const agents = await getMarketplaceAgents();
   const publishedById = new Map(agents.filter((agent) => !seededAgents.some((seeded) => seeded.id === agent.id)).map((agent) => [agent.id, agent]));
 
-  if (query.trim().length < 2 || publishedById.size === 0) {
+  if (query.trim().length < 2) {
+    debugLog("search", "fallback:short-query", { totalAgents: agents.length });
     return lexicalFallbackMatches(agents, query || "best marketplace agent");
   }
 
   try {
     const embedding = await embedText(query, "query");
     const collection = await agentCollection();
-    const result = await collection.query<ChromaAgentMetadata>({
-      queryEmbeddings: [embedding],
-      nResults: Math.min(8, publishedById.size),
-      include: ["distances", "metadatas", "documents"],
-    });
+    const result = await debugTimed(
+      "chroma",
+      "query",
+      { collection: COLLECTION_NAME, nResults: 8, queryLength: query.length },
+      () =>
+        collection.query<ChromaAgentMetadata>({
+          queryEmbeddings: [embedding],
+          nResults: 8,
+          include: ["distances", "metadatas", "documents"],
+        }),
+    );
 
     const ids = result.ids[0] ?? [];
     const distances = result.distances?.[0] ?? [];
+    const metadatas = result.metadatas?.[0] ?? [];
+    const documents = result.documents?.[0] ?? [];
+    debugLog("chroma", "query:results", {
+      ids,
+      distances: distances.map((distance) => (distance == null ? null : Number(distance.toFixed(4)))),
+      metadataNames: metadatas.map((metadata) => metadata?.name ?? null),
+    });
+
+    const chromaAgentsById = new Map(publishedById);
     const candidates = ids
       .map((id, index) => {
-        const agent = publishedById.get(id);
-        if (!agent) return null;
+        const agent =
+          publishedById.get(id) ?? chromaRecordToMarketplaceAgent(id, metadatas[index], documents[index]);
+        chromaAgentsById.set(id, agent);
         return {
           id,
           name: agent.name,
@@ -201,12 +302,20 @@ export async function semanticSearchAgents(query: string): Promise<AgentMatch[]>
       })
       .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
 
+    debugLog("search", "candidates:built", {
+      candidates: candidates.map((candidate) => ({
+        id: candidate.id,
+        name: candidate.name,
+        distance: candidate.distance,
+      })),
+    });
+
     const ranking = await rankAgentAnnouncements(query, candidates);
     const rankedIds = ranking.length ? ranking.map((item) => item.id) : candidates.map((item) => item.id);
     const reasonById = new Map(ranking.map((item) => [item.id, item.reason]));
 
     const semanticMatches = rankedIds.reduce<AgentMatch[]>((matches, id, index) => {
-        const agent = publishedById.get(id);
+        const agent = chromaAgentsById.get(id);
         if (!agent) return matches;
         const distance = candidates.find((candidate) => candidate.id === id)?.distance;
         matches.push({
@@ -219,9 +328,14 @@ export async function semanticSearchAgents(query: string): Promise<AgentMatch[]>
       }, []);
 
     const staticMatches = lexicalFallbackMatches(seededAgents, query).slice(0, Math.max(0, 6 - semanticMatches.length));
+    debugLog("search", "request:ok", {
+      semanticMatches: semanticMatches.map((match) => match.agent.id),
+      staticFill: staticMatches.map((match) => match.agent.id),
+      durationMs: Date.now() - searchStartedAt,
+    });
     return [...semanticMatches, ...staticMatches].slice(0, 6);
   } catch (error) {
-    console.error("Semantic search failed, using lexical fallback.", error);
+    debugError("search", "request:fallback-after-error", error, { query, durationMs: Date.now() - searchStartedAt });
     return lexicalFallbackMatches(agents, query);
   }
 }

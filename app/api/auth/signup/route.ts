@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hashPassword } from "@/lib/auth-password";
 import { createSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from "@/lib/auth-session";
+import { debugLog } from "@/lib/debug";
 import { prisma } from "@/lib/db";
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,16 +24,20 @@ export async function POST(request: Request) {
   const password = String(body.password ?? "");
   const nameRaw = body.name != null ? String(body.name).trim() : "";
   const name = nameRaw.length > 0 ? nameRaw : null;
+  debugLog("auth", "signup:attempt", { email, hasName: Boolean(name) });
 
   if (!email || !emailRe.test(email)) {
+    debugLog("auth", "signup:rejected", { reason: "invalid-email" });
     return jsonError("Enter a valid email address.", 400);
   }
   if (password.length < 8) {
+    debugLog("auth", "signup:rejected", { email, reason: "weak-password" });
     return jsonError("Password must be at least 8 characters.", 400);
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
+    debugLog("auth", "signup:rejected", { email, reason: "email-exists" });
     return jsonError("An account with this email already exists.", 409);
   }
 
@@ -45,5 +50,6 @@ export async function POST(request: Request) {
   const token = await createSessionToken({ userId: user.id, email: user.email });
   const res = NextResponse.json({ user });
   res.cookies.set(SESSION_COOKIE_NAME, token, sessionCookieOptions);
+  debugLog("auth", "signup:created", { userId: user.id, email: user.email, hasName: Boolean(user.name) });
   return res;
 }

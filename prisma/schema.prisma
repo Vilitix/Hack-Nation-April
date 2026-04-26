@@ -31,6 +31,10 @@ model PublishedAgent {
   apiPath         String?     @unique @map("api_path")
   tokenHash       String?     @map("token_hash")
   endpointUrl     String?     @map("endpoint_url")
+  apiParameterKey String      @default("request") @map("api_parameter_key")
+  apiParameterLabel String    @default("Request") @map("api_parameter_label")
+  apiParameterPlaceholder String? @map("api_parameter_placeholder")
+  upstreamAuthTokenEnc String? @map("upstream_auth_token_enc")
   port            Int?
   revenueSats     Int         @default(0) @map("revenue_sats")
   runCount        Int         @default(0) @map("run_count")

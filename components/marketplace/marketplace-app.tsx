@@ -131,7 +131,24 @@ export function MarketplaceApp({ initialAgents }: { initialAgents: Agent[] }) {
                 {query.trim().length >= 2 ? "Best Semantic Matches" : "Selection of the Day"}
               </div>
               <div className="h-[1px] flex-1 bg-zinc-900" />
-              {trimmedQuery.length >= 2 && semanticPending && <div className="text-[9px] text-zinc-600">researching</div>}
+              {trimmedQuery.length >= 2 && semanticPending && (
+                <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/60 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="animate-pulse">semantic research</span>
+                </div>
+              )}
+              {trimmedQuery.length >= 2 && !semanticPending && matches.length > 0 && (
+                <div className="text-[9px] text-zinc-600" title={matches[0]?.reasons?.join(" | ")}>
+                  {matches[0]?.badge === "Strong match" && matches[0]?.reasons?.[0]?.includes("Closest") 
+                    ? "via Chroma" 
+                    : matches[0]?.reasons?.[0]?.includes("Matches") 
+                      ? "keyword match" 
+                      : "semantic ranked"}
+                </div>
+              )}
             </div>
             
             <div className="grid gap-2 sm:grid-cols-3">

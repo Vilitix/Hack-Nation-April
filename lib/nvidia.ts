@@ -1,3 +1,5 @@
+import { debugLog, debugTimed } from "@/lib/debug";
+
 const NVIDIA_API_BASE_URL = process.env.NVIDIA_API_BASE_URL ?? "https://integrate.api.nvidia.com/v1";
 const NVIDIA_EMBEDDING_MODEL = process.env.NVIDIA_EMBEDDING_MODEL ?? "nvidia/nv-embedqa-e5-v5";
 const NVIDIA_SEARCH_MODEL = process.env.NVIDIA_SEARCH_MODEL ?? "meta/llama-3.1-70b-instruct";
@@ -21,27 +23,37 @@ function apiKey() {
 }
 
 async function nvidiaFetch<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`${NVIDIA_API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
+  const model = typeof body.model === "string" ? body.model : "unknown";
+
+  return debugTimed("nvidia", "request", { path, model }, async () => {
+    const response = await fetch(`${NVIDIA_API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as T & {
+      error?: { message?: string };
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error?.message ?? `NVIDIA API request failed with ${response.status}.`);
+    }
+
+    return payload;
   });
-
-  const payload = (await response.json().catch(() => ({}))) as T & {
-    error?: { message?: string };
-  };
-
-  if (!response.ok) {
-    throw new Error(payload.error?.message ?? `NVIDIA API request failed with ${response.status}.`);
-  }
-
-  return payload;
 }
 
 export async function embedText(text: string, inputType: "passage" | "query") {
+  debugLog("nvidia", "embedding:model-selected", {
+    model: NVIDIA_EMBEDDING_MODEL,
+    inputType,
+    textLength: text.length,
+  });
+
   const payload = await nvidiaFetch<NvidiaEmbeddingResponse>("/embeddings", {
     input: [text],
     model: NVIDIA_EMBEDDING_MODEL,
@@ -52,6 +64,12 @@ export async function embedText(text: string, inputType: "passage" | "query") {
   if (!embedding?.length) {
     throw new Error("NVIDIA embedding response did not include an embedding.");
   }
+
+  debugLog("nvidia", "embedding:received", {
+    model: NVIDIA_EMBEDDING_MODEL,
+    inputType,
+    dimensions: embedding.length,
+  });
 
   return embedding;
 }
@@ -94,6 +112,12 @@ function parseJsonArray(content: string): AgentRanking[] {
 export async function rankAgentAnnouncements(query: string, candidates: AgentRankingCandidate[]) {
   if (candidates.length === 0) return [];
 
+  debugLog("nvidia", "chat:model-selected", {
+    model: NVIDIA_SEARCH_MODEL,
+    queryLength: query.length,
+    candidates: candidates.map((candidate) => candidate.id),
+  });
+
   const payload = await nvidiaFetch<NvidiaChatResponse>("/chat/completions", {
     model: NVIDIA_SEARCH_MODEL,
     temperature: 0.1,
@@ -116,11 +140,23 @@ export async function rankAgentAnnouncements(query: string, candidates: AgentRan
   });
 
   const content = payload.choices?.[0]?.message?.content;
-  if (!content) return [];
+  if (!content) {
+    debugLog("nvidia", "chat:empty-ranking", { model: NVIDIA_SEARCH_MODEL });
+    return [];
+  }
 
   try {
-    return parseJsonArray(content);
+    const ranking = parseJsonArray(content);
+    debugLog("nvidia", "chat:ranking-parsed", {
+      model: NVIDIA_SEARCH_MODEL,
+      rankedIds: ranking.map((item) => item.id),
+    });
+    return ranking;
   } catch {
+    debugLog("nvidia", "chat:ranking-parse-fallback", {
+      model: NVIDIA_SEARCH_MODEL,
+      contentPreview: content.slice(0, 180),
+    });
     return [];
   }
 }

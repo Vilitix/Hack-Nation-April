@@ -1,6 +1,7 @@
 import { HostingMode } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth-session";
+import { debugError, debugLog } from "@/lib/debug";
 import { prisma } from "@/lib/db";
 import { indexPublishedAgent } from "@/lib/semantic-agent-search";
 
@@ -10,9 +11,13 @@ function jsonError(message: string, status: number) {
 
 export async function POST(request: Request, { params }: { params: Promise<{ agentId: string }> }) {
   const session = await getSession();
-  if (!session) return jsonError("You must be signed in.", 401);
+  if (!session) {
+    debugLog("publish", "activate:rejected", { reason: "not-signed-in" });
+    return jsonError("You must be signed in.", 401);
+  }
 
   const { agentId } = await params;
+  debugLog("publish", "activate:attempt", { agentId, userId: session.userId });
   let body: { paymentHash?: unknown; preimage?: unknown };
   try {
     body = await request.json();
@@ -21,14 +26,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ age
   }
 
   if (typeof body.paymentHash !== "string" || typeof body.preimage !== "string") {
+    debugLog("publish", "activate:rejected", { agentId, userId: session.userId, reason: "missing-payment-proof" });
     return jsonError("Missing payment proof.", 400);
   }
 
   const agent = await prisma.publishedAgent.findFirst({
     where: { id: agentId, ownerId: session.userId },
   });
-  if (!agent) return jsonError("Agent not found.", 404);
+  if (!agent) {
+    debugLog("publish", "activate:rejected", { agentId, userId: session.userId, reason: "agent-not-found" });
+    return jsonError("Agent not found.", 404);
+  }
   if (agent.hostingMode !== HostingMode.MARKET_HOSTED) {
+    debugLog("publish", "activate:rejected", { agentId, userId: session.userId, reason: "not-market-hosted" });
     return jsonError("Only marketplace-hosted plans require activation payment.", 400);
   }
 
@@ -36,12 +46,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ age
     where: { id: agent.id },
     data: { status: "ACTIVE" },
   });
+  debugLog("publish", "activate:db-updated", { agentId: updated.id, status: updated.status });
 
   try {
     await indexPublishedAgent(updated);
   } catch (error) {
-    console.error("Hosted agent activated but semantic index refresh failed.", error);
+    debugError("publish", "activate:index-refresh-failed", error, { agentId: updated.id });
   }
 
+  debugLog("publish", "activate:ok", { agentId: updated.id, status: updated.status });
   return NextResponse.json({ agent: updated });
 }

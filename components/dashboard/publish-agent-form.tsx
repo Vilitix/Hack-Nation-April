@@ -17,6 +17,8 @@ type CreatedAgent = {
   name: string;
   status: string;
   apiPath: string | null;
+  apiParameterKey: string;
+  apiParameterLabel: string;
   hostingMode: string;
   hostingPlan: string | null;
 };
@@ -28,6 +30,10 @@ export function PublishAgentForm({ plans, baseUrl }: { plans: Plan[]; baseUrl: s
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [priceSats, setPriceSats] = useState("1000");
+  const [apiParameterKey, setApiParameterKey] = useState("request");
+  const [apiParameterLabel, setApiParameterLabel] = useState("Request");
+  const [apiParameterPlaceholder, setApiParameterPlaceholder] = useState("Describe what you want this agent to do");
+  const [upstreamAuthToken, setUpstreamAuthToken] = useState("");
   const [endpointUrl, setEndpointUrl] = useState("");
   const [port, setPort] = useState("443");
   const [created, setCreated] = useState<{ agent: CreatedAgent; apiToken: string } | null>(null);
@@ -54,6 +60,10 @@ export function PublishAgentForm({ plans, baseUrl }: { plans: Plan[]; baseUrl: s
           name,
           description,
           priceSats: Number(priceSats),
+          apiParameterKey,
+          apiParameterLabel,
+          apiParameterPlaceholder,
+          upstreamAuthToken: upstreamAuthToken || undefined,
           hostingMode: mode,
           hostingPlan: mode === "MARKET_HOSTED" ? plan : undefined,
           endpointUrl: mode === "SELF_HOSTED" ? endpointUrl : undefined,
@@ -148,15 +158,43 @@ export function PublishAgentForm({ plans, baseUrl }: { plans: Plan[]; baseUrl: s
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} required rows={3} className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none focus:border-zinc-500" />
         </div>
 
-        {mode === "SELF_HOSTED" ? (
-          <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+        <div className="rounded-lg border border-zinc-900 bg-black p-4">
+          <div className="text-sm font-medium text-zinc-100">Runtime API input</div>
+          <p className="mt-1 text-xs text-zinc-500">
+            Define the user parameter that will be sent to your agent API payload.
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">Secure HTTPS endpoint</label>
-              <input type="url" value={endpointUrl} onChange={(e) => setEndpointUrl(e.target.value)} placeholder="https://your-agent.example.com/run" required className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-500" />
+              <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">Payload key</label>
+              <input value={apiParameterKey} onChange={(e) => setApiParameterKey(e.target.value)} required placeholder="request" className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-500" />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">Port</label>
-              <input type="number" min="1" max="65535" value={port} onChange={(e) => setPort(e.target.value)} required className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none focus:border-zinc-500" />
+              <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">User-facing label</label>
+              <input value={apiParameterLabel} onChange={(e) => setApiParameterLabel(e.target.value)} required placeholder="Request" className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-500" />
+            </div>
+          </div>
+          <div className="mt-4 space-y-1.5">
+            <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">Placeholder</label>
+            <input value={apiParameterPlaceholder} onChange={(e) => setApiParameterPlaceholder(e.target.value)} placeholder="Describe what you want this agent to do" className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-500" />
+          </div>
+        </div>
+
+        {mode === "SELF_HOSTED" ? (
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">Secure HTTPS endpoint</label>
+                <input type="url" value={endpointUrl} onChange={(e) => setEndpointUrl(e.target.value)} placeholder="https://your-agent.example.com/run" required className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-500" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">Port</label>
+                <input type="number" min="1" max="65535" value={port} onChange={(e) => setPort(e.target.value)} required className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none focus:border-zinc-500" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">Upstream API bearer token</label>
+              <input type="password" value={upstreamAuthToken} onChange={(e) => setUpstreamAuthToken(e.target.value)} placeholder="Token your agent API expects" className="w-full rounded-md border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-zinc-500" />
+              <p className="text-xs text-zinc-600">Encrypted at rest and only used server-side when forwarding requests.</p>
             </div>
           </div>
         ) : (
@@ -203,7 +241,7 @@ export function PublishAgentForm({ plans, baseUrl }: { plans: Plan[]; baseUrl: s
           </div>
           <button
             type="button"
-            onClick={() => navigator.clipboard.writeText(`curl -X POST ${apiUrl} -H \"Authorization: Bearer ${created.apiToken}\" -H \"Content-Type: application/json\" -d '{}'`)}
+            onClick={() => navigator.clipboard.writeText(`curl -X POST ${apiUrl} -H \"Authorization: Bearer ${created.apiToken}\" -H \"Content-Type: application/json\" -d '{\"${created.agent.apiParameterKey}\":\"Your ${created.agent.apiParameterLabel.toLowerCase()}\"}'`)}
             className="mt-4 inline-flex items-center gap-2 rounded-md border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
           >
             <Copy size={14} />
