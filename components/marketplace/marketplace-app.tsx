@@ -3,10 +3,9 @@
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AgentDetailModal } from "@/components/marketplace/agent-detail-modal";
-import { agents as seededAgents } from "@/lib/agents";
 import { matchAgents } from "@/lib/matcher";
 import { formatSats } from "@/lib/payments";
-import { Agent } from "@/lib/types";
+import { Agent, AgentMatch } from "@/lib/types";
 
 const typingExamples = [
   "I want to scrape all data on maps around Nancy city",
@@ -14,20 +13,62 @@ const typingExamples = [
   "I want the best data agent for this job",
 ];
 
-export function MarketplaceApp() {
+export function MarketplaceApp({ initialAgents }: { initialAgents: Agent[] }) {
   const [query, setQuery] = useState("");
   const [typedExample, setTypedExample] = useState("");
   const [modalAgent, setModalAgent] = useState<Agent | null>(null);
+  const [semanticResult, setSemanticResult] = useState<{ query: string; matches: AgentMatch[] } | null>(null);
+  const [semanticPending, setSemanticPending] = useState(false);
+  const trimmedQuery = query.trim();
+  const localMatches = useMemo(
+    () => matchAgents(initialAgents, trimmedQuery || typingExamples[0], "All"),
+    [initialAgents, trimmedQuery],
+  );
+  const matches = trimmedQuery.length >= 2 && semanticResult?.query === trimmedQuery ? semanticResult.matches : localMatches;
 
-  const matches = useMemo(() => matchAgents(seededAgents, query || typingExamples[0], "All"), [query]);
   const agentsOfTheDay = useMemo(() => {
-    const bestRated = [...seededAgents].sort((a, b) => b.successRate - a.successRate)[0];
-    const cheapest = [...seededAgents].sort((a, b) => a.priceSats - b.priceSats)[0];
+    const bestRated = [...initialAgents].sort((a, b) => b.successRate - a.successRate)[0];
+    const cheapest = [...initialAgents].sort((a, b) => a.priceSats - b.priceSats)[0];
     const strongMatch = matches[0]?.agent;
-    const picks = [strongMatch, bestRated, cheapest].filter((agent): agent is typeof seededAgents[number] => Boolean(agent));
+    const picks = [strongMatch, bestRated, cheapest].filter((agent): agent is Agent => Boolean(agent));
     return Array.from(new Map(picks.map((agent) => [agent.id, agent])).values()).slice(0, 3);
-  }, [matches]);
-  const offerCards = useMemo(() => [...seededAgents, ...seededAgents, ...seededAgents], []);
+  }, [initialAgents, matches]);
+  const offerCards = useMemo(() => [...initialAgents, ...initialAgents, ...initialAgents], [initialAgents]);
+
+  useEffect(() => {
+    if (trimmedQuery.length < 2) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setSemanticPending(true);
+      try {
+        const response = await fetch("/api/marketplace/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: trimmedQuery }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Search failed");
+        const data = (await response.json()) as { matches?: AgentMatch[] };
+        setSemanticResult({ query: trimmedQuery, matches: data.matches?.length ? data.matches : localMatches });
+      } catch {
+        if (!controller.signal.aborted) {
+          setSemanticResult({ query: trimmedQuery, matches: localMatches });
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setSemanticPending(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [localMatches, trimmedQuery]);
 
   useEffect(() => {
     let exampleIndex = 0;
@@ -86,12 +127,15 @@ export function MarketplaceApp() {
 
           <div className="mt-8 w-full max-w-3xl text-left">
             <div className="mb-2.5 flex items-center gap-3">
-              <div className="text-[8px] font-medium uppercase tracking-[0.24em] text-zinc-500">Selection of the Day</div>
+              <div className="text-[8px] font-medium uppercase tracking-[0.24em] text-zinc-500">
+                {query.trim().length >= 2 ? "Best Semantic Matches" : "Selection of the Day"}
+              </div>
               <div className="h-[1px] flex-1 bg-zinc-900" />
+              {trimmedQuery.length >= 2 && semanticPending && <div className="text-[9px] text-zinc-600">researching</div>}
             </div>
             
             <div className="grid gap-2 sm:grid-cols-3">
-              {agentsOfTheDay.map((agent) => (
+              {(query.trim().length >= 2 ? matches.slice(0, 3).map((match) => match.agent) : agentsOfTheDay).map((agent) => (
                 <button
                   key={agent.id}
                   type="button"
@@ -103,6 +147,11 @@ export function MarketplaceApp() {
                 >
                   <div className="w-full">
                     <div className="truncate text-left text-[11px] font-medium text-zinc-300 transition-colors group-hover:text-white">{agent.name}</div>
+                    <p className="mt-1 line-clamp-2 text-left text-[10px] text-zinc-600">
+                      {query.trim().length >= 2
+                        ? matches.find((match) => match.agent.id === agent.id)?.reasons[0] ?? agent.tagline
+                        : agent.tagline}
+                    </p>
                     <div className="mt-2 flex w-full items-center justify-between">
                       <span className="text-[10px] font-medium text-zinc-500">{formatSats(agent.priceSats)} sats</span>
                       <span className="text-[9px] text-zinc-500">{agent.successRate}% success</span>

@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
+import { withChroma } from "chromadb";
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  turbopack: {},
+};
 
-export default nextConfig;
+export default withChroma(nextConfig);

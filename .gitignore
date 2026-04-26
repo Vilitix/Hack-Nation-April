@@ -14,7 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Do not add `lib/` here — this Next.js app uses ./lib/ for source (auth-session, db, etc.).
+# Python’s packaging “lib/” rule would prevent collaborators from getting those files.
 lib64/
 parts/
 sdist/

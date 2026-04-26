@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/db";
 import { apiSlug, generateApiToken, hashApiToken } from "@/lib/publishing";
+import { indexPublishedAgent } from "@/lib/semantic-agent-search";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -70,6 +71,14 @@ export async function POST(request: Request) {
       status: mode === HostingMode.SELF_HOSTED ? "ACTIVE" : "WAITING_PAYMENT",
     },
   });
+
+  try {
+    await indexPublishedAgent(agent);
+  } catch (error) {
+    await prisma.publishedAgent.delete({ where: { id: agent.id } });
+    console.error("Failed to index published agent.", error);
+    return jsonError("Agent was not published because semantic indexing failed. Check NVIDIA_API_KEY and Chroma.", 503);
+  }
 
   return NextResponse.json({ agent, apiToken });
 }

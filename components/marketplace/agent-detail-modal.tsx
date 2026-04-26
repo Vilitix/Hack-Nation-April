@@ -100,23 +100,16 @@ function ParameterFieldInput({
 }
 
 export function AgentDetailModal({ agent, onClose }: { agent: Agent | null; onClose: () => void }) {
+  if (!agent || typeof document === "undefined") return null;
+
+  return <AgentDetailModalContent key={agent.id} agent={agent} onClose={onClose} />;
+}
+
+function AgentDetailModalContent({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   const titleId = useId();
-  const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<"detail" | "pay">("detail");
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [paid, setPaid] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (agent) {
-      setStep("detail");
-      setParamValues({});
-      setPaid(false);
-    }
-  }, [agent?.id]);
 
   const onEscape = useCallback(
     (e: KeyboardEvent) => {
@@ -135,8 +128,6 @@ export function AgentDetailModal({ agent, onClose }: { agent: Agent | null; onCl
       document.body.style.overflow = prev;
     };
   }, [agent, onEscape]);
-
-  if (!mounted || !agent) return null;
 
   const content = (
     <div

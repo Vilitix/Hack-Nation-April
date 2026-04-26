@@ -2,6 +2,7 @@ import { HostingMode } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth-session";
 import { prisma } from "@/lib/db";
+import { indexPublishedAgent } from "@/lib/semantic-agent-search";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -35,6 +36,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ age
     where: { id: agent.id },
     data: { status: "ACTIVE" },
   });
+
+  try {
+    await indexPublishedAgent(updated);
+  } catch (error) {
+    console.error("Hosted agent activated but semantic index refresh failed.", error);
+  }
 
   return NextResponse.json({ agent: updated });
 }
