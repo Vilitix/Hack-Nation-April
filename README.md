@@ -13,4 +13,3 @@ npm run dev
 
 run chroma db with  
 docker run --rm -p 8000:8000 -v "$PWD/chroma-data:/chroma/chroma" chromadb/chroma
-ss dawdad
